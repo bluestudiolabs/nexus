@@ -66,11 +66,24 @@ class IntegrationCatalogTests(unittest.TestCase):
         row = {'kind': 'kavita', 'label': 'Books', 'url': 'http://reader.example.test:5000'}
         with tempfile.TemporaryDirectory() as td, patch.object(core, 'DATA', Path(td)), patch.object(core, 'DB', Path(td)/'db.sqlite3'):
             core.init()
+            core.set_setting(ic.SETTING, [row])
+            initial = ic.state()
+            self.assertEqual(initial['revision'], 0)
+            saved = initial['connections'][0]
+            self.assertEqual(len(saved['id']), 32)
+            self.assertEqual(ic.state()['connections'], [saved])
+            result = ic.save({'expectedRevision': 0, 'connections': [saved]})
+            self.assertEqual(result['revision'], 1)
+            with self.assertRaises(ic.RevisionConflict) as err:
+                ic.save({'expectedRevision': 0, 'connections': []})
+            self.assertEqual(err.exception.current['connections'], [saved])
+            with self.assertRaises(ValueError):
+                ic.save({'expectedRevision': 1, 'connections': [dict(saved, id='unknown')]})
+            self.assertEqual(ic.state()['revision'], 1)
+            ic.save({'expectedRevision': 1, 'connections': []})
             self.assertEqual(ic.state()['connections'], [])
-            self.assertEqual(ic.save({'connections': [row]})['connections'], [row])
-            self.assertEqual(ic.state()['connections'], [row])
-            ic.save({'connections': []})
-            self.assertEqual(ic.state()['connections'], [])
+            added = ic.save({'expectedRevision': 2, 'connections': [row]})
+            self.assertNotEqual(added['connections'][0]['id'], saved['id'])
 
 
 if __name__ == '__main__':
