@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - run: python -m unittest discover -v
+      - run: for f in *.js; do node --check "$f"; done
+      - run: go test -v .
+        working-directory: agents/windows
+      - run: |
+          mkdir -p dist
+          cd agents/windows
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-H windowsgui -s -w' -o ../../dist/NEXUS-Agent-Setup-x64.exe .
+          cd ../../dist
+          sha256sum NEXUS-Agent-Setup-x64.exe > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-UNSIGNED-development
+          path: dist/
+      - run: docker build -t nexus-ci .

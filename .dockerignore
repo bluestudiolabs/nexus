@@ -1,0 +1,11 @@
+.nexus
+.git
+**/__pycache__
+*.sqlite*
+*.db
+*.key
+*.crt
+*.pem
+*.zip
+*.exe
+*.tar.gz

@@ -1,0 +1,38 @@
+services:
+  nexus:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${NEXUS_BIND:?run setup}:${NEXUS_PORT:?run setup}:8080"
+    user: "${NEXUS_UID:?run setup}:${NEXUS_GID:?run setup}"
+    environment:
+      NEXUS_HOST: ${NEXUS_HOST:?run setup}
+      NEXUS_LAN: ${NEXUS_LAN:?run setup}
+      NEXUS_INTERFACE: ${NEXUS_INTERFACE:-}
+      NEXUS_NETDEV: /host/netdev
+      NEXUS_EXTRA_METER: /unconfigured
+      KUMA_URL: ${KUMA_URL:-}
+      KUMA_SLUG: ${KUMA_SLUG:-}
+      TZ: UTC
+    volumes:
+      - /proc/stat:/host/proc/stat:ro
+      - /proc/meminfo:/host/proc/meminfo:ro
+      - /proc/uptime:/host/proc/uptime:ro
+      - /proc/1/net/dev:/host/netdev:ro
+      - /sys:/host/sys:ro
+      - ./.nexus/meter:/host/ssd:ro
+      - ./.nexus/telemetry:/host/telemetry:ro
+      - ./.nexus/data:/data:rw
+      - ./.nexus/auth:/auth:ro
+      - ./.nexus/tls:/tls:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    mem_limit: 512m
+    pids_limit: 96
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
