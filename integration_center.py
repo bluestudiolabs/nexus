@@ -4,6 +4,7 @@ No network calls, shell commands, filesystem inspection or Docker access here.
 The optional local installer revalidates all inputs independently.
 """
 import ipaddress
+import json
 import uuid
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
@@ -63,16 +64,59 @@ def normalize_connections(d):
     return out
 
 
+class RevisionConflict(Exception):
+    def __init__(self, current):
+        self.current = current
+
+
+def _read_registry(db):
+    row = db.execute('SELECT v FROM settings WHERE k=?', (SETTING,)).fetchone()
+    raw = json.loads(row[0]) if row else []
+    if isinstance(raw, list):
+        rows = normalize_connections({'connections': raw})
+        raw = {'revision': 0, 'connections': [dict(r, id=uuid.uuid4().hex) for r in rows]}
+        _write_registry(db, raw)
+    return raw
+
+
+def _write_registry(db, raw):
+    db.execute('INSERT INTO settings(k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v',
+               (SETTING, json.dumps(raw)))
+
+
 def state():
     import core
-    return {'catalog': CATALOG, 'connections': core.setting(SETTING, [])}
+    with core.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        return dict(_read_registry(db), catalog=CATALOG)
 
 
 def save(d):
     import core
+    if not isinstance(d, dict) or type(d.get('expectedRevision')) is not int or d['expectedRevision'] < 0:
+        raise ValueError('A valid expectedRevision is required')
     rows = normalize_connections(d)
-    core.set_setting(SETTING, rows)
-    return {'catalog': CATALOG, 'connections': rows}
+    with core.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current = _read_registry(db)
+        if current['revision'] != d['expectedRevision']:
+            raise RevisionConflict(dict(current, catalog=CATALOG))
+        existing = {r['id']: r for r in current['connections']}
+        seen = set()
+        for source, row in zip(d['connections'], rows):
+            if 'id' in source:
+                ident = source['id']
+                if not isinstance(ident, str) or ident not in existing or ident in seen:
+                    raise ValueError('Unknown or duplicate connection ID')
+                if row['kind'] != existing[ident]['kind']:
+                    raise ValueError('Connection kind cannot change')
+            else:
+                ident = uuid.uuid4().hex
+            seen.add(ident)
+            row['id'] = ident
+        result = {'revision': current['revision'] + 1, 'connections': rows}
+        _write_registry(db, result)
+        return dict(result, catalog=CATALOG)
 
 
 def library_path(value):
