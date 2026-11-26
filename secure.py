@@ -1,4 +1,5 @@
 """HTTPS-only NEXUS web gateway. No host control or Docker socket."""
+import integration_center as integrations
 import dashboard as dash
 import features as f3
 import server as hostmon,core as c, ssl,hashlib,hmac,secrets,time,json,threading,os,base64,re,socket
@@ -61,6 +62,7 @@ class Handler(hostmon.Handler):
             if p in ('/','/index.html'):return self.send((APP/'index.html').read_bytes(),'text/html; charset=utf-8')
             if p in ('/app.js','/extra.js','/dashboard.js','/dashboard.css','/agent-linux.py','/features.js','/nexus-agent-linux.zip','/NEXUS-Agent-Setup-x64.exe'):
                 return self.send((APP/p[1:]).read_bytes(),'application/javascript' if p.endswith('.js') else 'text/css' if p.endswith('.css') else 'application/octet-stream')
+            if p=='/api/integrations':return self.reply(integrations.state())
             if p=='/api/dashboard':return self.reply(dash.load())
             if p=='/api/v3/rules':return self.reply(f3.rules())
             if p=='/api/v3/privacy':return self.reply(f3.privacy())
@@ -144,6 +146,10 @@ class Handler(hostmon.Handler):
             if p=='/api/logout':
                 with guard:sessions.pop(self.session(),None)
                 return self.reply({'ok':True},cookie='__Host-nexus=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')
+            if p=='/api/integrations':
+                try:return self.reply(integrations.save(d))
+                except integrations.RevisionConflict as conflict:return self.reply(dict(conflict.current,error='Registry changed'),409)
+            if p=='/api/integrations/plan':return self.reply(integrations.plan(d))
             if p=='/api/dashboard':return self.reply(dash.save(d))
             if p=='/api/v3/rules':return self.reply(f3.save_rules(d))
             if p=='/api/v3/privacy':return self.reply(f3.save_privacy(d))
